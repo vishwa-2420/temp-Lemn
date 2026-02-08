@@ -25,7 +25,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.bitchat.android.core.ui.utils.singleOrTripleClickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -217,22 +216,15 @@ fun PeerCounter(
 fun ChatHeaderContent(
     selectedPrivatePeer: String?,
     currentChannel: String?,
-    nickname: String,
     viewModel: ChatViewModel,
     onBackClick: () -> Unit,
     onSidebarClick: () -> Unit,
-    onTripleClick: () -> Unit,
-    onShowAppInfo: () -> Unit,
     onLocationChannelsClick: () -> Unit,
     onLocationNotesClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
 
     MainHeader(
-        nickname = nickname,
-        onNicknameChange = viewModel::setNickname,
-        onTitleClick = onShowAppInfo,
-        onTripleTitleClick = onTripleClick,
         onSidebarClick = onSidebarClick,
         onLocationChannelsClick = onLocationChannelsClick,
         onLocationNotesClick = onLocationNotesClick,
@@ -308,10 +300,6 @@ private fun ChannelHeader(
 
 @Composable
 private fun MainHeader(
-    nickname: String,
-    onNicknameChange: (String) -> Unit,
-    onTitleClick: () -> Unit,
-    onTripleTitleClick: () -> Unit,
     onSidebarClick: () -> Unit,
     onLocationChannelsClick: () -> Unit,
     onLocationNotesClick: () -> Unit,
@@ -336,20 +324,9 @@ private fun MainHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.app_brand),
+                text = "LEMN",
                 style = MaterialTheme.typography.headlineSmall,
-                color = colorScheme.primary,
-                modifier = Modifier.singleOrTripleClickable(
-                    onSingleClick = onTitleClick,
-                    onTripleClick = onTripleTitleClick
-                )
-            )
-            
-            Spacer(modifier = Modifier.width(2.dp))
-            
-            NicknameEditor(
-                value = nickname,
-                onValueChange = onNicknameChange
+                color = colorScheme.primary
             )
         }
         

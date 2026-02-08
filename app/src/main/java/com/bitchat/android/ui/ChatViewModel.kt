@@ -14,6 +14,7 @@ import com.bitchat.android.mesh.BluetoothMeshService
 import com.bitchat.android.service.MeshServiceHolder
 import com.bitchat.android.model.BitchatMessage
 import com.bitchat.android.model.BitchatMessageType
+import kotlinx.coroutines.flow.update
 import com.bitchat.android.nostr.NostrIdentityBridge
 import com.bitchat.android.protocol.BitchatPacket
 
@@ -184,6 +185,14 @@ class ChatViewModel(
     val geohashPeople: StateFlow<List<GeoPerson>> = state.geohashPeople
     val teleportedGeo: StateFlow<Set<String>> = state.teleportedGeo
     val geohashParticipantCounts: StateFlow<Map<String, Int>> = state.geohashParticipantCounts
+
+    // Incoming Contact Requests (UI-only state, not persisted)
+    private val _incomingContactRequests = MutableStateFlow<Set<String>>(emptySet())
+    val incomingContactRequests: StateFlow<Set<String>> = _incomingContactRequests.asStateFlow()
+
+    fun onIncomingContactRequest(peerID: String) {
+        _incomingContactRequests.update { it + peerID }
+    }
 
     init {
         // Note: Mesh service delegate is now set by MainActivity

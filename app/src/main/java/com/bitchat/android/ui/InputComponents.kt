@@ -165,6 +165,8 @@ fun MessageInput(
     currentChannel: String?,
     nickname: String,
     showMediaButtons: Boolean,
+    showLocationButton: Boolean,
+    onShareLocation: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -219,6 +221,20 @@ fun MessageInput(
         }
         
         Spacer(modifier = Modifier.width(8.dp)) // Reduced spacing
+
+        if (showLocationButton && onShareLocation != null) {
+            IconButton(
+                onClick = { onShareLocation() },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Place,
+                    contentDescription = "Share location",
+                    tint = colorScheme.secondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
         
         // Text-only: always show send button, no media controls
         IconButton(

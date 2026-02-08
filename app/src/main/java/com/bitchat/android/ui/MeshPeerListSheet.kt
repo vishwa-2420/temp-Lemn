@@ -31,6 +31,7 @@ import com.bitchat.android.core.ui.component.sheet.BitchatSheetTitle
 import com.bitchat.android.core.ui.component.sheet.BitchatSheetTopBar
 import com.bitchat.android.geohash.ChannelID
 import com.bitchat.android.ui.theme.BASE_FONT_SIZE
+import kotlinx.coroutines.launch
 
 
 /**
@@ -45,6 +46,9 @@ fun MeshPeerListSheet(
     viewModel: ChatViewModel,
     onDismiss: () -> Unit,
     onShowVerification: () -> Unit,
+    showOnlyDiscovered: Boolean = false,
+    contactPeerIds: Set<String> = emptySet(),
+    peerStarredYouIds: Set<String> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -88,8 +92,8 @@ fun MeshPeerListSheet(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 64.dp, bottom = 20.dp)
                 ) {
-                    // Channels section
-                    if (joinedChannels.isNotEmpty()) {
+                    // Channels section (hidden in discovery-only mode)
+                    if (!showOnlyDiscovered && joinedChannels.isNotEmpty()) {
                         item(key = "channels_header") {
                             Text(
                                 text = stringResource(id = R.string.channels).uppercase(),
@@ -141,31 +145,50 @@ fun MeshPeerListSheet(
 
                     // People section - switch between mesh and geohash lists (iOS-compatible)
                     item(key = "people_section") {
-                        when (selectedLocationChannel) {
-                            is ChannelID.Location -> {
-                                // Show geohash people list when in location channel
-                                GeohashPeopleList(
-                                    viewModel = viewModel,
-                                    onTapPerson = onDismiss
-                                )
-                            }
+                        if (showOnlyDiscovered) {
+                            val discoveredPeers = connectedPeers.filterNot { contactPeerIds.contains(it) }
+                            PeopleSection(
+                                modifier = Modifier.padding(top = 8.dp),
+                                connectedPeers = discoveredPeers,
+                                peerNicknames = peerNicknames,
+                                peerRSSI = peerRSSI,
+                                nickname = nickname,
+                                colorScheme = colorScheme,
+                                selectedPrivatePeer = selectedPrivatePeer,
+                                viewModel = viewModel,
+                                discoveryMode = true,
+                                peerStarredYouIds = peerStarredYouIds,
+                                onPrivateChatStart = { }
+                            )
+                        } else {
+                            when (selectedLocationChannel) {
+                                is ChannelID.Location -> {
+                                    // Show geohash people list when in location channel
+                                    GeohashPeopleList(
+                                        viewModel = viewModel,
+                                        onTapPerson = onDismiss
+                                    )
+                                }
 
-                            else -> {
-                                // Show mesh peer list when in mesh channel (default)
-                                PeopleSection(
-                                    modifier = Modifier.padding(top = if (joinedChannels.isNotEmpty()) 16.dp else 0.dp),
-                                    connectedPeers = connectedPeers,
-                                    peerNicknames = peerNicknames,
-                                    peerRSSI = peerRSSI,
-                                    nickname = nickname,
-                                    colorScheme = colorScheme,
-                                    selectedPrivatePeer = selectedPrivatePeer,
-                                    viewModel = viewModel,
-                                     onPrivateChatStart = { peerID ->
-                                         viewModel.showPrivateChatSheet(peerID)
-                                         onDismiss()
-                                     }
-                                )
+                                else -> {
+                                    // Show mesh peer list when in mesh channel (default)
+                                    PeopleSection(
+                                        modifier = Modifier.padding(top = if (joinedChannels.isNotEmpty()) 16.dp else 0.dp),
+                                        connectedPeers = connectedPeers,
+                                        peerNicknames = peerNicknames,
+                                        peerRSSI = peerRSSI,
+                                        nickname = nickname,
+                                        colorScheme = colorScheme,
+                                        selectedPrivatePeer = selectedPrivatePeer,
+                                        viewModel = viewModel,
+                                        discoveryMode = false,
+                                        peerStarredYouIds = peerStarredYouIds,
+                                         onPrivateChatStart = { peerID ->
+                                             viewModel.showPrivateChatSheet(peerID)
+                                             onDismiss()
+                                         }
+                                    )
+                                }
                             }
                         }
                     }
@@ -276,6 +299,8 @@ fun PeopleSection(
     colorScheme: ColorScheme,
     selectedPrivatePeer: String?,
     viewModel: ChatViewModel,
+    discoveryMode: Boolean,
+    peerStarredYouIds: Set<String>,
     onPrivateChatStart: (String) -> Unit
 ) {
     fun resolveDisplayNameForPeerId(key: String): String {
@@ -379,13 +404,14 @@ fun PeopleSection(
 
         sortedPeers.forEach { peerID ->
             val isFavorite = peerFavoriteStates[peerID] ?: false
+            val isMutualContact = isFavorite && peerStarredYouIds.contains(peerID)
             val isVerified = peerVerifiedStates[peerID] ?: false
             // fingerprint and favorite relationship resolution not needed here; UI will show Nostr globe for appended offline favorites below
 
             val noiseHex = noiseHexByPeerID[peerID]
             val meshUnread = hasUnreadPrivateMessages.contains(peerID)
             val nostrUnread = if (noiseHex != null) hasUnreadPrivateMessages.contains(noiseHex) else false
-            val combinedHasUnread = meshUnread || nostrUnread
+            val combinedHasUnread = if (isMutualContact) (meshUnread || nostrUnread) else false
             val displayName = resolveDisplayNameForPeerId(peerID)
             val (bName, _) = splitSuffix(displayName)
             val showHash = (baseNameCounts[bName] ?: 0) > 1
@@ -402,19 +428,21 @@ fun PeopleSection(
                 hasUnreadDM = combinedHasUnread,
                 colorScheme = colorScheme,
                 viewModel = viewModel,
-                onItemClick = { onPrivateChatStart(peerID) },
+                onItemClick = if (discoveryMode) ({ }) else ({ onPrivateChatStart(peerID) }),
                 onToggleFavorite = { 
                     Log.d("SidebarComponents", "Sidebar toggle favorite: peerID=$peerID, currentFavorite=$isFavorite")
                     viewModel.toggleFavorite(peerID) 
                 },
                 unreadCount = if (combinedHasUnread) 1 else 0,
                 showNostrGlobe = false,
-                showHashSuffix = showHash
+                showHashSuffix = showHash,
+                showAddToContacts = discoveryMode,
+                addToContactsLabel = "Add to Contacts"
             )
         }
 
         // Append offline favorites we actively favorite (and not currently connected)
-        offlineFavorites.forEach { fav ->
+        if (!discoveryMode) offlineFavorites.forEach { fav ->
             val favPeerID = fav.peerNoisePublicKey.joinToString("") { b -> "%02x".format(b) }
             // If any connected peer maps to this noise key, skip showing the offline entry
             val isMappedToConnected = noiseHexByPeerID.values.any { it.equals(favPeerID, ignoreCase = true) }
@@ -463,7 +491,9 @@ fun PeopleSection(
                 },
                 unreadCount = if (hasUnread) 1 else 0,
                 showNostrGlobe = (fav.isMutual && fav.peerNostrPublicKey != null),
-                showHashSuffix = showHash
+                showHashSuffix = showHash,
+                showAddToContacts = false,
+                addToContactsLabel = "Add to Contacts"
             )
             appendedOfflineIds.add(favPeerID)
         }
@@ -528,7 +558,9 @@ private fun PeerItem(
     onToggleFavorite: () -> Unit,
     unreadCount: Int = 0,
     showNostrGlobe: Boolean = false,
-    showHashSuffix: Boolean = true
+    showHashSuffix: Boolean = true,
+    showAddToContacts: Boolean = false,
+    addToContactsLabel: String = "Add to Contacts"
 ) {
     val currentNickname by viewModel.nickname.collectAsStateWithLifecycle()
     // Split display name for hashtag suffix support (iOS-compatible)
@@ -641,21 +673,39 @@ private fun PeerItem(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Favorite star with proper filled/outlined states
-                IconButton(
-                    onClick = onToggleFavorite,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.Star,
-                        contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
-                        modifier = Modifier.size(16.dp),
-                        tint = if (isFavorite) Color(0xFFFFD700) else Color(0xFF4CAF50)
-                    )
+                if (showAddToContacts) {
+                    TextButton(onClick = onToggleFavorite) {
+                        Text(
+                            text = addToContactsLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colorScheme.primary
+                        )
+                    }
+                } else {
+                    // Favorite star with proper filled/outlined states
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.Star,
+                            contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (isFavorite) Color(0xFFFFD700) else Color(0xFF4CAF50)
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+private fun extractFavoritedYouName(message: com.bitchat.android.model.BitchatMessage): String? {
+    if (message.sender != "system") return null
+    val marker = " favorited you"
+    val idx = message.content.indexOf(marker)
+    if (idx <= 0) return null
+    return message.content.substring(0, idx).trim().takeIf { it.isNotEmpty() }
 }
 
 /**
@@ -724,7 +774,11 @@ fun PrivateChatSheet(
     onDismiss: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     val privateChats by viewModel.privateChats.collectAsStateWithLifecycle()
+    val publicMessages by viewModel.messages.collectAsStateWithLifecycle()
     val peerNicknames by viewModel.peerNicknames.collectAsStateWithLifecycle()
     val nickname by viewModel.nickname.collectAsStateWithLifecycle()
     val connectedPeers by viewModel.connectedPeers.collectAsStateWithLifecycle()
@@ -747,10 +801,17 @@ fun PrivateChatSheet(
     val titleText = displayName
 
     val messages = privateChats[peerID] ?: emptyList()
+    val starredYouPeerIds = remember(publicMessages, peerNicknames) {
+        publicMessages.mapNotNull { msg ->
+            val name = extractFavoritedYouName(msg) ?: return@mapNotNull null
+            peerNicknames.entries.firstOrNull { it.value == name }?.key
+        }.toSet()
+    }
+    val fingerprint = peerFingerprints[peerID]
+    val isMutualContact = (fingerprint != null && favoritePeers.contains(fingerprint) && starredYouPeerIds.contains(peerID))
     val isDirect = peerDirectMap[peerID] == true
     val isConnected = connectedPeers.contains(peerID) || isDirect
     val sessionState = peerSessionStates[peerID]
-    val fingerprint = peerFingerprints[peerID]
     val isFavorite = remember(favoritePeers, fingerprint) {
         if (fingerprint != null) favoritePeers.contains(fingerprint) else viewModel.isFavorite(peerID)
     }
@@ -782,67 +843,127 @@ fun PrivateChatSheet(
 
                     HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.3f))
 
-                    // Messages list
-                    var forceScrollToBottom by remember { mutableStateOf(false) }
-                    var isScrolledUp by remember { mutableStateOf(false) }
+                    if (isMutualContact) {
+                        // Messages list
+                        var forceScrollToBottom by remember { mutableStateOf(false) }
+                        var isScrolledUp by remember { mutableStateOf(false) }
 
-                    MessagesList(
-                        messages = messages,
-                        currentUserNickname = nickname,
-                        meshService = viewModel.meshService,
-                        modifier = Modifier.weight(1f),
-                        forceScrollToBottom = forceScrollToBottom,
-                        onScrolledUpChanged = { isUp -> isScrolledUp = isUp },
-                        onNicknameClick = { /* handle mention */ },
-                        onMessageLongPress = { /* handle long press */ },
-                        onCancelTransfer = { msg -> viewModel.cancelMediaSend(msg.id) },
-                        onImageClick = { _, _, _ -> /* handle image click */ }
-                    )
+                        val filteredMessages = messages.filter { extractFavoritedYouName(it) == null }
 
-                    HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.3f))
-
-                    // Input section
-                    var messageText by remember {
-                        mutableStateOf(
-                            androidx.compose.ui.text.input.TextFieldValue(
-                                ""
-                            )
+                        MessagesList(
+                            messages = filteredMessages,
+                            currentUserNickname = nickname,
+                            meshService = viewModel.meshService,
+                            modifier = Modifier.weight(1f),
+                            forceScrollToBottom = forceScrollToBottom,
+                            onScrolledUpChanged = { isUp -> isScrolledUp = isUp },
+                            onNicknameClick = { /* handle mention */ },
+                            onMessageLongPress = { /* handle long press */ },
+                            onCancelTransfer = { msg -> viewModel.cancelMediaSend(msg.id) },
+                            onImageClick = { _, _, _ -> /* handle image click */ }
                         )
+
+                        HorizontalDivider(color = colorScheme.outline.copy(alpha = 0.3f))
+
+                        // Input section
+                        var messageText by remember {
+                            mutableStateOf(
+                                androidx.compose.ui.text.input.TextFieldValue(
+                                    ""
+                                )
+                            )
+                        }
+
+                        ChatInputSection(
+                            messageText = messageText,
+                            onMessageTextChange = { newText ->
+                                messageText = newText
+                                viewModel.updateMentionSuggestions(newText.text)
+                            },
+                            onSend = {
+                                if (messageText.text.trim().isNotEmpty()) {
+                                    viewModel.sendMessage(messageText.text.trim())
+                                    messageText = androidx.compose.ui.text.input.TextFieldValue("")
+                                    forceScrollToBottom = !forceScrollToBottom
+                                }
+                            },
+                            onSendVoiceNote = { peer, channel, path ->
+                                viewModel.sendVoiceNote(peer, channel, path)
+                            },
+                            onSendImageNote = { peer, channel, path ->
+                                viewModel.sendImageNote(peer, channel, path)
+                            },
+                            onSendFileNote = { peer, channel, path ->
+                                viewModel.sendFileNote(peer, channel, path)
+                            },
+                            showCommandSuggestions = false,
+                            commandSuggestions = emptyList(),
+                            showMentionSuggestions = false,
+                            mentionSuggestions = emptyList(),
+                            onCommandSuggestionClick = { },
+                            onMentionSuggestionClick = { },
+                            selectedPrivatePeer = peerID,
+                            currentChannel = null,
+                            nickname = nickname,
+                            colorScheme = colorScheme,
+                            showMediaButtons = true,
+                            showLocationButton = true,
+                            onShareLocation = {
+                                fetchLastLocation(context) { result ->
+                                    when (result) {
+                                        is LocationFetchResult.Success -> {
+                                            val lat = String.format(
+                                                java.util.Locale.US,
+                                                "%.6f",
+                                                result.latitude
+                                            )
+                                            val lon = String.format(
+                                                java.util.Locale.US,
+                                                "%.6f",
+                                                result.longitude
+                                            )
+                                            viewModel.sendMessage(
+                                                "📍 Location\nLat: $lat\nLon: $lon"
+                                            )
+                                        }
+                                        LocationFetchResult.PermissionDenied -> {
+                                            snackbarScope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    "Location permission required"
+                                                )
+                                            }
+                                        }
+                                        LocationFetchResult.Unavailable -> {
+                                            snackbarScope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    "Unable to get location"
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Private messages are available only after you both add each other.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
                     }
 
-                    ChatInputSection(
-                        messageText = messageText,
-                        onMessageTextChange = { newText ->
-                            messageText = newText
-                            viewModel.updateMentionSuggestions(newText.text)
-                        },
-                        onSend = {
-                            if (messageText.text.trim().isNotEmpty()) {
-                                viewModel.sendMessage(messageText.text.trim())
-                                messageText = androidx.compose.ui.text.input.TextFieldValue("")
-                                forceScrollToBottom = !forceScrollToBottom
-                            }
-                        },
-                        onSendVoiceNote = { peer, channel, path ->
-                            viewModel.sendVoiceNote(peer, channel, path)
-                        },
-                        onSendImageNote = { peer, channel, path ->
-                            viewModel.sendImageNote(peer, channel, path)
-                        },
-                        onSendFileNote = { peer, channel, path ->
-                            viewModel.sendFileNote(peer, channel, path)
-                        },
-                        showCommandSuggestions = false,
-                        commandSuggestions = emptyList(),
-                        showMentionSuggestions = false,
-                        mentionSuggestions = emptyList(),
-                        onCommandSuggestionClick = { },
-                        onMentionSuggestionClick = { },
-                        selectedPrivatePeer = peerID,
-                        currentChannel = null,
-                        nickname = nickname,
-                        colorScheme = colorScheme,
-                        showMediaButtons = true
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
                     )
                 }
 

@@ -7,14 +7,17 @@ package com.bitchat.android.ui
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.IconButton
@@ -52,6 +55,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val privateChats by viewModel.privateChats.collectAsStateWithLifecycle()
     val channelMessages by viewModel.channelMessages.collectAsStateWithLifecycle()
     val peerNicknames by viewModel.peerNicknames.collectAsStateWithLifecycle()
+    val favoritePeers by viewModel.favoritePeers.collectAsStateWithLifecycle()
+    val peerFingerprints by viewModel.peerFingerprints.collectAsStateWithLifecycle()
     val showCommandSuggestions by viewModel.showCommandSuggestions.collectAsStateWithLifecycle()
     val commandSuggestions by viewModel.commandSuggestions.collectAsStateWithLifecycle()
     val showMentionSuggestions by viewModel.showMentionSuggestions.collectAsStateWithLifecycle()
@@ -61,6 +66,26 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val privateChatSheetPeer by viewModel.privateChatSheetPeer.collectAsStateWithLifecycle()
     val showVerificationSheet by viewModel.showVerificationSheet.collectAsStateWithLifecycle()
     val showSecurityVerificationSheet by viewModel.showSecurityVerificationSheet.collectAsStateWithLifecycle()
+
+    val ignoredContactRequests = remember { mutableStateOf<Set<String>>(emptySet()) }
+    val starredYouPeerIds = remember(messages, peerNicknames) {
+        messages.mapNotNull { msg ->
+            val name = extractFavoritedYouName(msg) ?: return@mapNotNull null
+            peerNicknames.entries.firstOrNull { it.value == name }?.key
+        }.toSet()
+    }
+    val pendingContactRequest = remember(messages, peerNicknames, ignoredContactRequests.value) {
+        messages
+            .filter { extractFavoritedYouName(it) != null }
+            .sortedByDescending { it.timestamp }
+            .mapNotNull { msg ->
+                val name = extractFavoritedYouName(msg) ?: return@mapNotNull null
+                val peerId = peerNicknames.entries.firstOrNull { it.value == name }?.key ?: return@mapNotNull null
+                if (ignoredContactRequests.value.contains(peerId)) return@mapNotNull null
+                peerId to name
+            }
+            .firstOrNull()
+    }
 
     var messageText by remember { mutableStateOf(TextFieldValue("")) }
     var showPasswordPrompt by remember { mutableStateOf(false) }
@@ -77,6 +102,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     var forceScrollToBottom by remember { mutableStateOf(false) }
     var isScrolledUp by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0 = Chat, 1 = Emergency, 2 = Profile
+    var showWipeConfirm by remember { mutableStateOf(false) }
 
     // Show password dialog when needed
     LaunchedEffect(showPasswordPrompt) {
@@ -176,15 +202,187 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val peers = connectedPeers.toList().sorted()
-                        if (peers.isEmpty()) {
+                        // DEBUG — Incoming Signals (always visible)
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                            shape = MaterialTheme.shapes.medium,
+                            border = BorderStroke(1.dp, colorScheme.outline.copy(alpha = 0.3f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "DEBUG — Incoming Signals",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "starredYouPeerIds (${starredYouPeerIds.size}):",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colorScheme.onSurface
+                                )
+                                if (starredYouPeerIds.isEmpty()) {
+                                    Text(
+                                        text = "(none)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                } else {
+                                    starredYouPeerIds.forEach { peerId ->
+                                        Text(
+                                            text = peerId,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "ignoredContactRequests (${ignoredContactRequests.value.size}):",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colorScheme.onSurface
+                                )
+                                if (ignoredContactRequests.value.isEmpty()) {
+                                    Text(
+                                        text = "(none)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                } else {
+                                    ignoredContactRequests.value.forEach { peerId ->
+                                        Text(
+                                            text = peerId,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Recent messages:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colorScheme.onSurface
+                                )
+                                messages
+                                    .takeLast(15)
+                                    .forEach { msg ->
+                                        Text(
+                                            text = "- sender=${msg.sender}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
+                                        )
+                                        Text(
+                                            text = "  text=\"${msg.content}\"",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
+                                        )
+                                    }
+                            }
+                        }
+
+                        val incomingRequestIds = starredYouPeerIds
+                            .filter { peerId -> !ignoredContactRequests.value.contains(peerId) }
+
+                        if (incomingRequestIds.isNotEmpty()) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                shape = MaterialTheme.shapes.medium,
+                                border = BorderStroke(1.dp, colorScheme.outline.copy(alpha = 0.3f))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = "Incoming Contact Requests",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = colorScheme.onSurface
+                                    )
+                                    incomingRequestIds.forEach { peerId ->
+                                        val displayName = peerNicknames[peerId] ?: peerId.take(12)
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = displayName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "Wants to add you as a contact",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colorScheme.onSurface.copy(alpha = 0.7f)
+                                            )
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.toggleFavorite(peerId)
+                                                        ignoredContactRequests.value =
+                                                            ignoredContactRequests.value + peerId
+                                                    }
+                                                ) {
+                                                    Text("Accept")
+                                                }
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        ignoredContactRequests.value =
+                                                            ignoredContactRequests.value + peerId
+                                                    }
+                                                ) {
+                                                    Text("Ignore")
+                                                }
+                                            }
+                                        }
+                                        HorizontalDivider(
+                                            color = colorScheme.outline.copy(alpha = 0.2f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = stringResource(com.bitchat.android.R.string.no_one_connected),
+                                text = "Contacts",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = colorScheme.onSurface
+                            )
+                            IconButton(
+                                onClick = { viewModel.showMeshPeerList() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Person,
+                                    contentDescription = "Discover",
+                                    tint = colorScheme.secondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        val contactPeerIds = connectedPeers.filter { peerId ->
+                            val fp = peerFingerprints[peerId]
+                            fp != null && favoritePeers.contains(fp) && starredYouPeerIds.contains(peerId)
+                        }.sorted()
+
+                        if (contactPeerIds.isEmpty()) {
+                            Text(
+                                text = "No contacts yet. Discover nearby users.",
                                 color = colorScheme.onSurface.copy(alpha = 0.6f),
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         } else {
-                            peers.forEach { peerID ->
+                            contactPeerIds.forEach { peerID ->
                                 val displayName = peerNicknames[peerID] ?: peerID.take(12)
                                 Surface(
                                     modifier = Modifier
@@ -205,52 +403,73 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     }
                 }
                 1 -> {
-                    // Emergency tab: public mesh timeline (SOS feed)
+                    // Emergency tab: dedicated SOS interface
+                    var showSosConfirm by remember { mutableStateOf(false) }
                     MaterialTheme(
                         colorScheme = emergencyScheme,
                         typography = MaterialTheme.typography
                     ) {
-                        MessagesList(
-                            messages = displayMessages,
-                            currentUserNickname = nickname,
-                            meshService = viewModel.meshService,
-                            modifier = Modifier.weight(1f),
-                            forceScrollToBottom = forceScrollToBottom,
-                            onScrolledUpChanged = { isUp -> isScrolledUp = isUp },
-                            onNicknameClick = { fullSenderName ->
-                                val currentText = messageText.text
-                                val (baseName, hashSuffix) = splitSuffix(fullSenderName)
-                                val selectedLocationChannel = viewModel.selectedLocationChannel.value
-                                val mentionText = if (selectedLocationChannel is com.bitchat.android.geohash.ChannelID.Location && hashSuffix.isNotEmpty()) {
-                                    "@$baseName$hashSuffix"
-                                } else {
-                                    "@$baseName"
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!showSosConfirm) {
+                                Button(
+                                    onClick = { showSosConfirm = true },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = emergencyScheme.primary,
+                                        contentColor = emergencyScheme.onPrimary
+                                    ),
+                                    modifier = Modifier
+                                        .padding(24.dp)
+                                        .height(72.dp)
+                                        .widthIn(min = 200.dp)
+                                ) {
+                                    Text(
+                                        text = "SOS",
+                                        style = MaterialTheme.typography.headlineSmall
+                                    )
                                 }
-                                val newText = when {
-                                    currentText.isEmpty() -> "$mentionText "
-                                    currentText.endsWith(" ") -> "$currentText$mentionText "
-                                    else -> "$currentText $mentionText "
+                            } else {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        shape = MaterialTheme.shapes.large,
+                                        color = emergencyScheme.primary,
+                                        modifier = Modifier
+                                            .height(64.dp)
+                                            .widthIn(min = 240.dp)
+                                            .pointerInput(Unit) {
+                                                detectTapGestures(
+                                                    onLongPress = {
+                                                        viewModel.switchToChannel(null)
+                                                        viewModel.sendMessage("SOS")
+                                                        showSosConfirm = false
+                                                    }
+                                                )
+                                            }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "Hold to Send SOS",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = emergencyScheme.onPrimary
+                                            )
+                                        }
+                                    }
+                                    TextButton(onClick = { showSosConfirm = false }) {
+                                        Text(
+                                            text = "Cancel",
+                                            color = emergencyScheme.onSurface
+                                        )
+                                    }
                                 }
-                                messageText = TextFieldValue(
-                                    text = newText,
-                                    selection = TextRange(newText.length)
-                                )
-                            },
-                            onMessageLongPress = { message ->
-                                val (baseName, _) = splitSuffix(message.sender)
-                                selectedUserForSheet = baseName
-                                selectedMessageForSheet = message
-                                showUserSheet = true
-                            },
-                            onCancelTransfer = { msg ->
-                                viewModel.cancelMediaSend(msg.id)
-                            },
-                            onImageClick = { currentPath, allImagePaths, initialIndex ->
-                                viewerImagePaths = allImagePaths
-                                initialViewerIndex = initialIndex
-                                showFullScreenImageViewer = true
                             }
-                        )
+                        }
                     }
                 }
                 else -> {
@@ -263,10 +482,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = nickname,
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = colorScheme.onSurface
+                        NicknameEditor(
+                            value = nickname,
+                            onValueChange = { newName -> viewModel.setNickname(newName) }
                         )
                         Button(onClick = { viewModel.showVerificationSheet() }) {
                             Text(
@@ -277,6 +495,16 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             Text(
                                 text = stringResource(com.bitchat.android.R.string.security_verification_title)
                             )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = { showWipeConfirm = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colorScheme.error,
+                                contentColor = colorScheme.onError
+                            )
+                        ) {
+                            Text(text = "WIPE ALL DATA")
                         }
                     }
                 }
@@ -289,55 +517,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         }
     }
 
-    if (selectedTab == 1) {
-        // Emergency tab input (SOS)
-        MaterialTheme(
-            colorScheme = emergencyScheme,
-            typography = MaterialTheme.typography
-        ) {
-            ChatInputSection(
-                messageText = messageText,
-                onMessageTextChange = { newText: TextFieldValue ->
-                    messageText = newText
-                    viewModel.updateMentionSuggestions(newText.text)
-                },
-                onSend = {
-                    if (messageText.text.trim().isNotEmpty()) {
-                        viewModel.switchToChannel(null)
-                        viewModel.sendMessage(messageText.text.trim())
-                        messageText = TextFieldValue("")
-                        forceScrollToBottom = !forceScrollToBottom
-                    }
-                },
-                onSendVoiceNote = { _, _, _ -> },
-                onSendImageNote = { _, _, _ -> },
-                onSendFileNote = { _, _, _ -> },
-                showCommandSuggestions = false,
-                commandSuggestions = emptyList(),
-                showMentionSuggestions = showMentionSuggestions,
-                mentionSuggestions = mentionSuggestions,
-                onCommandSuggestionClick = { suggestion: CommandSuggestion ->
-                    val commandText = viewModel.selectCommandSuggestion(suggestion)
-                    messageText = TextFieldValue(
-                        text = commandText,
-                        selection = TextRange(commandText.length)
-                    )
-                },
-                onMentionSuggestionClick = { mention: String ->
-                    val mentionText = viewModel.selectMentionSuggestion(mention, messageText.text)
-                    messageText = TextFieldValue(
-                        text = mentionText,
-                        selection = TextRange(mentionText.length)
-                    )
-                },
-                selectedPrivatePeer = null,
-                currentChannel = null,
-                nickname = nickname,
-                colorScheme = emergencyScheme,
-                showMediaButtons = false
-            )
-        }
-    } else if (selectedTab == 0) {
+    if (selectedTab == 0) {
         // Chat tab input only when a private chat sheet is open
         // (PrivateChatSheet provides its own input; keep this hidden here)
     }
@@ -352,8 +532,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
             viewModel = viewModel,
             colorScheme = colorScheme,
             onSidebarToggle = { },
-            onShowAppInfo = { viewModel.showAppInfo() },
-            onPanicClear = { viewModel.panicClearAllData() },
             onLocationChannelsClick = { },
             onLocationNotesClick = { }
         )
@@ -447,7 +625,66 @@ fun ChatScreen(viewModel: ChatViewModel) {
         onSecurityVerificationSheetDismiss = viewModel::hideSecurityVerificationSheet,
         showMeshPeerListSheet = showMeshPeerListSheet,
         onMeshPeerListDismiss = viewModel::hideMeshPeerList,
+        showDiscoveryOnly = selectedTab == 0,
+        contactPeerIds = connectedPeers.filter { peerId ->
+            val fp = peerFingerprints[peerId]
+            fp != null && favoritePeers.contains(fp) && starredYouPeerIds.contains(peerId)
+        }.toSet(),
+        peerStarredYouIds = starredYouPeerIds
     )
+
+    if (selectedTab != 1) {
+        if (showWipeConfirm) {
+            AlertDialog(
+                onDismissRequest = { showWipeConfirm = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showWipeConfirm = false
+                            viewModel.panicClearAllData()
+                        }
+                    ) {
+                        Text("Confirm")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showWipeConfirm = false }) {
+                        Text("Cancel")
+                    }
+                },
+                title = { Text("Wipe All Data") },
+                text = { Text("This will erase all local data.") }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContactRequestDialog(
+    peerId: String,
+    peerName: String,
+    onAdd: () -> Unit,
+    onIgnore: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onIgnore,
+        title = { Text(text = "Contact Request") },
+        text = { Text(text = "$peerName wants to add you as a contact") },
+        confirmButton = {
+            TextButton(onClick = onAdd) { Text("Add Contact") }
+        },
+        dismissButton = {
+            TextButton(onClick = onIgnore) { Text("Ignore") }
+        }
+    )
+}
+
+private fun extractFavoritedYouName(message: com.bitchat.android.model.BitchatMessage): String? {
+    if (message.sender != "system") return null
+    val marker = " favorited you"
+    val idx = message.content.indexOf(marker)
+    if (idx <= 0) return null
+    return message.content.substring(0, idx).trim().takeIf { it.isNotEmpty() }
 }
 
 @Composable
@@ -468,7 +705,9 @@ fun ChatInputSection(
     currentChannel: String?,
     nickname: String,
     colorScheme: ColorScheme,
-    showMediaButtons: Boolean
+    showMediaButtons: Boolean,
+    showLocationButton: Boolean,
+    onShareLocation: (() -> Unit)?
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -505,6 +744,8 @@ fun ChatInputSection(
                 currentChannel = currentChannel,
                 nickname = nickname,
                 showMediaButtons = showMediaButtons,
+                showLocationButton = showLocationButton,
+                onShareLocation = onShareLocation,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -520,8 +761,6 @@ private fun ChatFloatingHeader(
     viewModel: ChatViewModel,
     colorScheme: ColorScheme,
     onSidebarToggle: () -> Unit,
-    onShowAppInfo: () -> Unit,
-    onPanicClear: () -> Unit,
     onLocationChannelsClick: () -> Unit,
     onLocationNotesClick: () -> Unit
 ) {
@@ -540,7 +779,6 @@ private fun ChatFloatingHeader(
                 ChatHeaderContent(
                     selectedPrivatePeer = selectedPrivatePeer,
                     currentChannel = currentChannel,
-                    nickname = nickname,
                     viewModel = viewModel,
                     onBackClick = {
                         when {
@@ -549,8 +787,6 @@ private fun ChatFloatingHeader(
                         }
                     },
                     onSidebarClick = onSidebarToggle,
-                    onTripleClick = onPanicClear,
-                    onShowAppInfo = onShowAppInfo,
                     onLocationChannelsClick = onLocationChannelsClick,
                     onLocationNotesClick = {
                         // Ensure location is loaded before showing sheet
@@ -593,6 +829,9 @@ private fun ChatDialogs(
     onSecurityVerificationSheetDismiss: () -> Unit,
     showMeshPeerListSheet: Boolean,
     onMeshPeerListDismiss: () -> Unit,
+    showDiscoveryOnly: Boolean,
+    contactPeerIds: Set<String>,
+    peerStarredYouIds: Set<String>,
 ) {
     val privateChatSheetPeer by viewModel.privateChatSheetPeer.collectAsStateWithLifecycle()
 
@@ -654,7 +893,10 @@ private fun ChatDialogs(
             onShowVerification = {
                 onMeshPeerListDismiss()
                 viewModel.showVerificationSheet(fromSidebar = true)
-            }
+            },
+            showOnlyDiscovered = showDiscoveryOnly,
+            contactPeerIds = contactPeerIds,
+            peerStarredYouIds = peerStarredYouIds
         )
     }
 

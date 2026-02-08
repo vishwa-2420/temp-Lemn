@@ -579,6 +579,11 @@ class MessageHandler(private val myPeerID: String, private val appContext: andro
                     isRelay = false
                 )
                 delegate?.onMessageReceived(sys)
+                
+                // Notify delegate of explicit persistent state change request
+                if (isFavorite) {
+                    delegate?.onIncomingContactRequest(fromPeerID)
+                }
             }
         } catch (_: Exception) {
             // Best-effort; ignore errors
@@ -628,4 +633,7 @@ interface MessageHandlerDelegate {
     fun onReadReceiptReceived(messageID: String, peerID: String)
     fun onVerifyChallengeReceived(peerID: String, payload: ByteArray, timestampMs: Long)
     fun onVerifyResponseReceived(peerID: String, payload: ByteArray, timestampMs: Long)
+    
+    // Contact Request Signaling (Default no-op to maintain backward compatibility during incremental refactor)
+    fun onIncomingContactRequest(peerID: String) {}
 }
