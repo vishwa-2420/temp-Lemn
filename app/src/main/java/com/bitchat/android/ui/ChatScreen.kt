@@ -6,6 +6,8 @@ package com.bitchat.android.ui
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.*
@@ -17,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
@@ -30,6 +34,12 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bitchat.android.model.BitchatMessage
 import com.bitchat.android.ui.media.FullScreenImageViewer
+import com.bitchat.android.ui.theme.ThemePreference
+import com.bitchat.android.ui.theme.ThemePreferenceManager
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 /**
  * Main ChatScreen - REFACTORED to use component-based architecture
@@ -202,83 +212,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // DEBUG — Incoming Signals (always visible)
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = colorScheme.surfaceVariant.copy(alpha = 0.2f),
-                            shape = MaterialTheme.shapes.medium,
-                            border = BorderStroke(1.dp, colorScheme.outline.copy(alpha = 0.3f))
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = "DEBUG — Incoming Signals",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "starredYouPeerIds (${starredYouPeerIds.size}):",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colorScheme.onSurface
-                                )
-                                if (starredYouPeerIds.isEmpty()) {
-                                    Text(
-                                        text = "(none)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colorScheme.onSurface.copy(alpha = 0.6f)
-                                    )
-                                } else {
-                                    starredYouPeerIds.forEach { peerId ->
-                                        Text(
-                                            text = peerId,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "ignoredContactRequests (${ignoredContactRequests.value.size}):",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colorScheme.onSurface
-                                )
-                                if (ignoredContactRequests.value.isEmpty()) {
-                                    Text(
-                                        text = "(none)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colorScheme.onSurface.copy(alpha = 0.6f)
-                                    )
-                                } else {
-                                    ignoredContactRequests.value.forEach { peerId ->
-                                        Text(
-                                            text = peerId,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "Recent messages:",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colorScheme.onSurface
-                                )
-                                messages
-                                    .takeLast(15)
-                                    .forEach { msg ->
-                                        Text(
-                                            text = "- sender=${msg.sender}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
-                                        )
-                                        Text(
-                                            text = "  text=\"${msg.content}\"",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colorScheme.onSurface.copy(alpha = 0.8f)
-                                        )
-                                    }
-                            }
-                        }
+                        // DEBUG UI REMOVED
+
 
                         val incomingRequestIds = starredYouPeerIds
                             .filter { peerId -> !ignoredContactRequests.value.contains(peerId) }
@@ -405,107 +340,189 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 1 -> {
                     // Emergency tab: dedicated SOS interface
                     var showSosConfirm by remember { mutableStateOf(false) }
+                    var sosCooldown by remember { mutableStateOf(false) }
+                    val emergencySnackbarHostState = remember { SnackbarHostState() }
+                    val emergencyScope = rememberCoroutineScope()
+                    val emergencyContext = androidx.compose.ui.platform.LocalContext.current
+                    val sosMessages = remember(messages) {
+                        messages
+                            .filter { it.content.contains("SOS \uD83D\uDEA8") }
+                            .sortedByDescending { it.timestamp }
+                    }
+                    val emergencyTimeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
                     MaterialTheme(
                         colorScheme = emergencyScheme,
                         typography = MaterialTheme.typography
                     ) {
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth(),
-                            contentAlignment = Alignment.Center
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
-                            if (!showSosConfirm) {
-                                Button(
-                                    onClick = { showSosConfirm = true },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = emergencyScheme.primary,
-                                        contentColor = emergencyScheme.onPrimary
-                                    ),
-                                    modifier = Modifier
-                                        .padding(24.dp)
-                                        .height(72.dp)
-                                        .widthIn(min = 200.dp)
-                                ) {
-                                    Text(
-                                        text = "SOS",
-                                        style = MaterialTheme.typography.headlineSmall
-                                    )
-                                }
-                            } else {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Surface(
-                                        shape = MaterialTheme.shapes.large,
-                                        color = emergencyScheme.primary,
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!showSosConfirm) {
+                                    Button(
+                                        onClick = { showSosConfirm = true },
+                                        enabled = !sosCooldown,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = emergencyScheme.primary,
+                                            contentColor = emergencyScheme.onPrimary
+                                        ),
                                         modifier = Modifier
-                                            .height(64.dp)
-                                            .widthIn(min = 240.dp)
-                                            .pointerInput(Unit) {
-                                                detectTapGestures(
-                                                    onLongPress = {
-                                                        viewModel.switchToChannel(null)
-                                                        viewModel.sendMessage("SOS")
-                                                        showSosConfirm = false
-                                                    }
+                                            .height(72.dp)
+                                            .widthIn(min = 200.dp)
+                                    ) {
+                                        Text(
+                                            text = "SOS",
+                                            style = MaterialTheme.typography.headlineSmall
+                                        )
+                                    }
+                                } else {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Surface(
+                                            shape = MaterialTheme.shapes.large,
+                                            color = emergencyScheme.primary,
+                                            modifier = Modifier
+                                                .height(64.dp)
+                                                .widthIn(min = 240.dp)
+                                                .pointerInput(Unit) {
+                                                    detectTapGestures(
+                                                        onLongPress = {
+                                                            if (sosCooldown) return@detectTapGestures
+                                                            fetchLastLocation(emergencyContext) { result ->
+                                                                val sosMessage = when (result) {
+                                                                    is LocationFetchResult.Success ->
+                                                                        "SOS \uD83D\uDEA8 I need help at ${result.latitude}, ${result.longitude}"
+                                                                    LocationFetchResult.PermissionDenied,
+                                                                    LocationFetchResult.Unavailable ->
+                                                                        "SOS \uD83D\uDEA8 I need help. Location unavailable."
+                                                                }
+                                                                // Force global/public send path before SOS send.
+                                                                viewModel.endPrivateChat()
+                                                                viewModel.switchToChannel(null)
+                                                                viewModel.sendMessage(sosMessage)
+                                                                emergencyScope.launch {
+                                                                    emergencySnackbarHostState.showSnackbar("SOS broadcast sent")
+                                                                    sosCooldown = true
+                                                                    delay(3000)
+                                                                    sosCooldown = false
+                                                                }
+                                                            }
+                                                            showSosConfirm = false
+                                                        }
+                                                    )
+                                                }
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = "Hold to Send SOS",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = emergencyScheme.onPrimary
                                                 )
                                             }
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
+                                        }
+                                        TextButton(onClick = { showSosConfirm = false }) {
                                             Text(
-                                                text = "Hold to Send SOS",
-                                                style = MaterialTheme.typography.labelLarge,
-                                                color = emergencyScheme.onPrimary
+                                                text = "Cancel",
+                                                color = emergencyScheme.onSurface
                                             )
                                         }
                                     }
-                                    TextButton(onClick = { showSosConfirm = false }) {
-                                        Text(
-                                            text = "Cancel",
-                                            color = emergencyScheme.onSurface
-                                        )
+                                }
+                            }
+                            HorizontalDivider(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                color = emergencyScheme.outline.copy(alpha = 0.3f)
+                            )
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(sosMessages) { message ->
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = emergencyScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        shape = MaterialTheme.shapes.medium
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = message.sender,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = emergencyScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = message.content,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = emergencyScheme.onSurface
+                                            )
+                                            Text(
+                                                text = emergencyTimeFormatter.format(message.timestamp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = emergencyScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                            )
+                                        }
                                     }
                                 }
                             }
+                            SnackbarHost(
+                                hostState = emergencySnackbarHostState,
+                                modifier = Modifier
+                                    .padding(16.dp)
+                            )
                         }
                     }
                 }
                 else -> {
                     // Profile tab: username + QR/verification access
+                    // Profile tab: 4-card settings layout
                     Column(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            .padding(24.dp),
+                            .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        NicknameEditor(
-                            value = nickname,
-                            onValueChange = { newName -> viewModel.setNickname(newName) }
+                        // 1. Username Card
+                        ProfileUsernameCard(
+                            nickname = nickname,
+                            onNicknameChange = { viewModel.setNickname(it) }
                         )
-                        Button(onClick = { viewModel.showVerificationSheet() }) {
-                            Text(
-                                text = stringResource(com.bitchat.android.R.string.verify_title)
-                            )
-                        }
-                        Button(onClick = { viewModel.showSecurityVerificationSheet() }) {
-                            Text(
-                                text = stringResource(com.bitchat.android.R.string.security_verification_title)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = { showWipeConfirm = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = colorScheme.error,
-                                contentColor = colorScheme.onError
-                            )
-                        ) {
-                            Text(text = "WIPE ALL DATA")
-                        }
+
+                        // 2. Verification Card
+                        ProfileVerificationCard(
+                            onClick = { viewModel.showVerificationSheet() }
+                        )
+
+                        // 3. Wipe Data Card
+                        ProfileWipeDataCard(
+                            onClick = { showWipeConfirm = true }
+                        )
+
+                        // 4. Appearance Card
+                        val currentTheme by ThemePreferenceManager.themeFlow.collectAsStateWithLifecycle()
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        ProfileAppearanceCard(
+                            currentTheme = currentTheme,
+                            onThemeSelected = { preference -> ThemePreferenceManager.set(context = context, preference) }0
+                        )
                     }
                 }
             }
@@ -927,4 +944,187 @@ private fun ChatDialogs(
             }
         )
     }
+}
+
+@Composable
+private fun ProfileCard(
+    title: String,
+    modifier: Modifier = Modifier,
+    colors: CardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        colors = colors,
+        border = null
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ProfileUsernameCard(
+    nickname: String,
+    onNicknameChange: (String) -> Unit
+) {
+    var isEditing by remember { mutableStateOf(false) }
+    var editedName by remember { mutableStateOf(TextFieldValue(nickname)) }
+
+    // Sync external changes unless editing
+    LaunchedEffect(nickname) {
+        if (!isEditing) {
+            editedName = TextFieldValue(nickname)
+        }
+    }
+
+    ProfileCard(title = "Username") {
+        if (isEditing) {
+            OutlinedTextField(
+                value = editedName,
+                onValueChange = { editedName = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onDone = {
+                        onNicknameChange(editedName.text)
+                        isEditing = false
+                    }
+                ),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                ),
+                trailingIcon = {
+                    IconButton(onClick = {
+                        onNicknameChange(editedName.text)
+                        isEditing = false
+                    }) {
+                        Icon(Icons.Filled.ArrowDownward, contentDescription = "Save")
+                    }
+                }
+            )
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isEditing = true }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "@$nickname",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = "Edit",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileVerificationCard(
+    onClick: () -> Unit
+) {
+    ProfileCard(title = "Verification") {
+        Button(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        ) {
+            Text("Show Verification QR")
+        }
+    }
+}
+
+@Composable
+private fun ProfileWipeDataCard(
+    onClick: () -> Unit
+) {
+    ProfileCard(
+        title = "Wipe All Data",
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+        )
+    ) {
+        Text(
+            text = "Deletes all local data from this device.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Button(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
+            )
+        ) {
+            Text("Wipe Data")
+        }
+    }
+}
+
+@Composable
+private fun ProfileAppearanceCard(
+    currentTheme: ThemePreference,
+    onThemeSelected: (ThemePreference) -> Unit
+) {
+    ProfileCard(title = "Appearance") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            ThemeOption(
+                label = "System",
+                selected = currentTheme == ThemePreference.System,
+                onClick = { onThemeSelected(ThemePreference.System) }
+            )
+            ThemeOption(
+                label = "Light",
+                selected = currentTheme == ThemePreference.Light,
+                onClick = { onThemeSelected(ThemePreference.Light) }
+            )
+            ThemeOption(
+                label = "Dark",
+                selected = currentTheme == ThemePreference.Dark,
+                onClick = { onThemeSelected(ThemePreference.Dark) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeOption(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        leadingIcon = if (selected) {
+            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+        } else null
+    )
 }

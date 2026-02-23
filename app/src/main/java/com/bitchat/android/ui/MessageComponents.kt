@@ -19,7 +19,9 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -109,7 +111,7 @@ fun MessagesList(
     LazyColumn(
         state = listState,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier,
         reverseLayout = true
     ) {
@@ -145,52 +147,68 @@ fun MessageItem(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
-    
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.Top
-            ) {
-                // Provide a small end padding for own private messages so overlay doesn't cover text
-                val endPad = if (message.isPrivate && message.sender == currentUserNickname) 16.dp else 0.dp
-                // Create a custom layout that combines selectable text with clickable nickname areas
-                MessageTextWithClickableNicknames(
-                    message = message,
-                    messages = messages,
-                    currentUserNickname = currentUserNickname,
-                    meshService = meshService,
-                    colorScheme = colorScheme,
-                    timeFormatter = timeFormatter,
-                    onNicknameClick = onNicknameClick,
-                    onMessageLongPress = onMessageLongPress,
-                    onCancelTransfer = onCancelTransfer,
-                    onImageClick = onImageClick,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = endPad)
-                )
-            }
+    val isSystem = message.sender == "system"
+    val isMine = message.sender == meshService.myPeerID ||
+            message.senderPeerID == meshService.myPeerID ||
+            message.sender == currentUserNickname ||
+            message.sender.startsWith("$currentUserNickname#")
 
-            // Delivery status for private messages (overlay, non-displacing)
-            if (message.isPrivate && message.sender == currentUserNickname) {
-                message.deliveryStatus?.let { status ->
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 2.dp)
-                    ) {
-                        DeliveryStatusIcon(status = status)
-                    }
+    if (isSystem) {
+        Text(
+            text = message.content,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontStyle = FontStyle.Italic,
+                color = colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        )
+        return
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val bubbleMaxWidth = maxWidth * 0.75f
+        val bubbleColor = if (isMine) colorScheme.primary.copy(alpha = 0.9f) else colorScheme.surfaceVariant
+        val bubbleTextColor = if (isMine) colorScheme.onPrimary else colorScheme.onSurface
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start
+        ) {
+            Surface(
+                modifier = Modifier.widthIn(max = bubbleMaxWidth),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                color = bubbleColor
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    MessageTextWithClickableNicknames(
+                        message = message,
+                        messages = messages,
+                        currentUserNickname = currentUserNickname,
+                        meshService = meshService,
+                        colorScheme = colorScheme,
+                        timeFormatter = timeFormatter,
+                        onNicknameClick = onNicknameClick,
+                        onMessageLongPress = onMessageLongPress,
+                        onCancelTransfer = onCancelTransfer,
+                        onImageClick = onImageClick,
+                        textColor = bubbleTextColor,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = timeFormatter.format(message.timestamp),
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.End,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = bubbleTextColor.copy(alpha = 0.6f)
+                        )
+                    )
                 }
             }
         }
-        
-        // Link previews removed; links are now highlighted inline and clickable within the message text
     }
 }
 
@@ -207,6 +225,7 @@ fun MessageItem(
         onMessageLongPress: ((BitchatMessage) -> Unit)?,
         onCancelTransfer: ((BitchatMessage) -> Unit)?,
         onImageClick: ((String, List<String>, Int) -> Unit)?,
+        textColor: Color,
         modifier: Modifier = Modifier
     ) {
     // Image special rendering
@@ -372,13 +391,11 @@ fun MessageItem(
         )
     } else {
         // Normal message display
-        val annotatedText = formatMessageAsAnnotatedString(
-            message = message,
-            currentUserNickname = currentUserNickname,
-            meshService = meshService,
-            colorScheme = colorScheme,
-            timeFormatter = timeFormatter
-        )
+        val annotatedText = remember(message.content, textColor) {
+            buildAnnotatedString {
+                append(message.content)
+            }
+        }
         
         // Check if this message was sent by self to avoid click interactions on own nickname
         val isSelf = message.senderPeerID == meshService.myPeerID || 
@@ -435,7 +452,7 @@ fun MessageItem(
             },
             softWrap = true,
             overflow = TextOverflow.Visible,
-            style = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
+            style = MaterialTheme.typography.bodyMedium.copy(color = textColor),
             onTextLayout = { result -> textLayoutResult = result }
         )
     }
