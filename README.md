@@ -17,7 +17,7 @@ You can download the latest version of bitchat for Android from the [GitHub Rele
 
 Or you can:
 
-[<img alt="Get it on Google Play" height="60" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"/>](https://play.google.com/store/apps/details?id=com.bitchat.droid)
+[<img alt="Get it on Google Play" height="60" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png"/>](https://play.google.com/store/apps/details?id=com.lemn.app)
 
 **Instructions:**
 
@@ -31,18 +31,18 @@ This project is released into the public domain. See the [LICENSE](LICENSE.md) f
 
 ## Features
 
-- **✅ Cross-Platform Compatible**: Full protocol compatibility with iOS bitchat
-- **✅ Decentralized Mesh Network**: Automatic peer discovery and multi-hop message relay over Bluetooth LE
-- **✅ End-to-End Encryption**: X25519 key exchange + AES-256-GCM for private messages
-- **✅ Channel-Based Chats**: Topic-based group messaging with optional password protection
-- **✅ Store & Forward**: Messages cached for offline peers and delivered when they reconnect
-- **✅ Privacy First**: No accounts, no phone numbers, no persistent identifiers
-- **✅ IRC-Style Commands**: Familiar `/join`, `/msg`, `/who` style interface
-- **✅ Message Retention**: Optional channel-wide message saving controlled by channel owners
-- **✅ Emergency Wipe**: Triple-tap logo to instantly clear all data
-- **✅ Modern Android UI**: Jetpack Compose with Material Design 3
-- **✅ Dark/Light Themes**: Terminal-inspired aesthetic matching iOS version
-- **✅ Battery Optimization**: Adaptive scanning and power management
+- **âœ… Cross-Platform Compatible**: Full protocol compatibility with iOS bitchat
+- **âœ… Decentralized Mesh Network**: Automatic peer discovery and multi-hop message relay over Bluetooth LE
+- **âœ… End-to-End Encryption**: X25519 key exchange + AES-256-GCM for private messages
+- **âœ… Channel-Based Chats**: Topic-based group messaging with optional password protection
+- **âœ… Store & Forward**: Messages cached for offline peers and delivered when they reconnect
+- **âœ… Privacy First**: No accounts, no phone numbers, no persistent identifiers
+- **âœ… IRC-Style Commands**: Familiar `/join`, `/msg`, `/who` style interface
+- **âœ… Message Retention**: Optional channel-wide message saving controlled by channel owners
+- **âœ… Emergency Wipe**: Triple-tap logo to instantly clear all data
+- **âœ… Modern Android UI**: Jetpack Compose with Material Design 3
+- **âœ… Dark/Light Themes**: Terminal-inspired aesthetic matching iOS version
+- **âœ… Battery Optimization**: Adaptive scanning and power management
 
 ## Android Setup
 
@@ -281,7 +281,7 @@ The Android implementation maintains 100% binary protocol compatibility with iOS
 
 This Android port enables seamless communication with the original iOS bitchat app:
 
-- **iPhone ↔ Android**: Full bidirectional messaging
+- **iPhone â†” Android**: Full bidirectional messaging
 - **Mixed Groups**: iOS and Android users in same channels
 - **Feature Parity**: All commands and encryption work across platforms
 - **Protocol Sync**: Identical message format and routing behavior
@@ -306,3 +306,4 @@ Contributions are welcome! Key areas for enhancement:
 - **iOS Compatibility**: Cross-reference with [original iOS repo](https://github.com/jackjackbits/bitchat)
 
 For iOS-specific issues, please refer to the [original iOS bitchat repository](https://github.com/jackjackbits/bitchat).
+

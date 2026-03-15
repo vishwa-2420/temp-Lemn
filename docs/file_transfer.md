@@ -1,10 +1,10 @@
 # Bitchat Bluetooth File Transfer: Images, Audio, and Generic Files (with Interactive Features)
 
-This document is the exhaustive implementation guide for Bitchat’s Bluetooth file transfer protocol for voice notes (audio) and images, including interactive features like waveform seeking. It describes the on‑wire packet format (both v1 and v2), fragmentation/progress/cancellation, sender/receiver behaviors, and the complete UX we implemented in the Android client so that other implementers can interoperate and match the user experience precisely.
+This document is the exhaustive implementation guide for Bitchatâ€™s Bluetooth file transfer protocol for voice notes (audio) and images, including interactive features like waveform seeking. It describes the onâ€‘wire packet format (both v1 and v2), fragmentation/progress/cancellation, sender/receiver behaviors, and the complete UX we implemented in the Android client so that other implementers can interoperate and match the user experience precisely.
 
 **Protocol Versions:**
-- **v1**: Original protocol with 2‑byte payload length (≤ 64 KiB files)
-- **v2**: Extended protocol with 4-byte payload length (≤ 4 GiB files) - use for all file transfers
+- **v1**: Original protocol with 2â€‘byte payload length (â‰¤ 64 KiB files)
+- **v2**: Extended protocol with 4-byte payload length (â‰¤ 4 GiB files) - use for all file transfers
 - File transfer packets use v2 format by default for optimal compatibility
 
 **Interactive Features:**
@@ -27,28 +27,28 @@ The guide is organized into:
 
 ## 1) Protocol Overview
 
-Bitchat BLE transport carries application messages inside the common `BitchatPacket` envelope. File transfer reuses the same envelope as public and private messages, with a distinct `type` and a TLV‑encoded payload.
+Bitchat BLE transport carries application messages inside the common `BitchatPacket` envelope. File transfer reuses the same envelope as public and private messages, with a distinct `type` and a TLVâ€‘encoded payload.
 
 ### 1.1 BitchatPacket envelope
 
 Fields (subset relevant to file transfer):
 
-- `version: UByte` — protocol version (`1` for v1, `2` for v2 with extended payload length).
-- `type: UByte` — message type. File transfer uses `MessageType.FILE_TRANSFER (0x22)`.
-- `senderID: ByteArray (8)` — 8‑byte binary peer ID.
-- `recipientID: ByteArray (8)` — 8‑byte recipient. For public: `SpecialRecipients.BROADCAST (0xFF…FF)`; for private: the target peer’s 8‑byte ID.
-- `timestamp: ULong` — milliseconds since epoch.
-- `payload: ByteArray` — TLV file payload (see below).
-- `signature: ByteArray?` — optional signature (present for private sends in our implementation, to match iOS integrity path).
-- `ttl: UByte` — hop TTL (we use `MAX_TTL` for broadcast, `7` for private).
+- `version: UByte` â€” protocol version (`1` for v1, `2` for v2 with extended payload length).
+- `type: UByte` â€” message type. File transfer uses `MessageType.FILE_TRANSFER (0x22)`.
+- `senderID: ByteArray (8)` â€” 8â€‘byte binary peer ID.
+- `recipientID: ByteArray (8)` â€” 8â€‘byte recipient. For public: `SpecialRecipients.BROADCAST (0xFFâ€¦FF)`; for private: the target peerâ€™s 8â€‘byte ID.
+- `timestamp: ULong` â€” milliseconds since epoch.
+- `payload: ByteArray` â€” TLV file payload (see below).
+- `signature: ByteArray?` â€” optional signature (present for private sends in our implementation, to match iOS integrity path).
+- `ttl: UByte` â€” hop TTL (we use `MAX_TTL` for broadcast, `7` for private).
 
 Envelope creation and broadcast paths are implemented in:
 
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt)
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothConnectionManager.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothConnectionManager.kt)
-- `app/src/main/java/com/bitchat/android/mesh/PacketProcessor.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/PacketProcessor.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothConnectionManager.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothConnectionManager.kt)
+- `app/src/main/java/com/lemn/app/mesh/PacketProcessor.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/PacketProcessor.kt)
 
-Private sends are additionally encrypted at the higher layer (Noise) for text messages, but file transfers use the `FILE_TRANSFER` message type in the clear at the envelope level with content carried inside a TLV. See code for any deployment‑specific enforcement.
+Private sends are additionally encrypted at the higher layer (Noise) for text messages, but file transfers use the `FILE_TRANSFER` message type in the clear at the envelope level with content carried inside a TLV. See code for any deploymentâ€‘specific enforcement.
 
 ### 1.2 Binary Protocol Extensions (v2)
 
@@ -95,40 +95,40 @@ PayloadLength: 4 bytes (big-endian, max ~4 GiB)
 
 The file payload is a TLV structure with mixed length field sizes to support large contents efficiently.
 
-- Defined in `app/src/main/java/com/bitchat/android/model/BitchatFilePacket.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/model/BitchatFilePacket.kt)
+- Defined in `app/src/main/java/com/lemn/app/model/BitchatFilePacket.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/model/BitchatFilePacket.kt)
 
 Canonical TLVs (v2 spec):
 
-- `0x01 FILE_NAME` — UTF‑8 bytes
+- `0x01 FILE_NAME` â€” UTFâ€‘8 bytes
   - Encoding: `type(1) + len(2) + value`
-- `0x02 FILE_SIZE` — 4 bytes (UInt32, big‑endian)
+- `0x02 FILE_SIZE` â€” 4 bytes (UInt32, bigâ€‘endian)
   - Encoding: `type(1) + len(2=4) + value(4)`
   - Note: v1 used 8 bytes (UInt64). v2 standardizes to 4 bytes. See Legacy Compatibility below.
-- `0x03 MIME_TYPE` — UTF‑8 bytes (e.g., `image/jpeg`, `audio/mp4`, `application/pdf`)
+- `0x03 MIME_TYPE` â€” UTFâ€‘8 bytes (e.g., `image/jpeg`, `audio/mp4`, `application/pdf`)
   - Encoding: `type(1) + len(2) + value`
-- `0x04 CONTENT` — raw file bytes
+- `0x04 CONTENT` â€” raw file bytes
   - Encoding: `type(1) + len(4) + value(len)`
-  - Exactly one CONTENT TLV per file payload in v2 (no TLV‑level chunking); overall packet fragmentation happens at the transport layer.
+  - Exactly one CONTENT TLV per file payload in v2 (no TLVâ€‘level chunking); overall packet fragmentation happens at the transport layer.
 
 Encoding rules:
 
-- Standard TLVs use `1 byte type + 2 bytes big‑endian length + value`.
-- CONTENT uses a 4‑byte big‑endian length to allow payloads well beyond 64 KiB.
-- With the v2 envelope (4‑byte payload length), CONTENT can be large; transport still fragments oversize packets to fit BLE MTU.
+- Standard TLVs use `1 byte type + 2 bytes bigâ€‘endian length + value`.
+- CONTENT uses a 4â€‘byte bigâ€‘endian length to allow payloads well beyond 64 KiB.
+- With the v2 envelope (4â€‘byte payload length), CONTENT can be large; transport still fragments oversize packets to fit BLE MTU.
 - Implementations should validate TLV boundaries; decoding should fail fast on malformed structures.
 
 Decoding rules (v2):
 
 - Accept the canonical TLVs above. Unknown TLVs should be ignored or cause failure per implementation policy (current Android rejects unknown types).
-- FILE_SIZE expects `len=4` and is parsed as UInt32; receivers may upcast to 64‑bit internally.
-- CONTENT expects a 4‑byte length field and a single occurrence; if multiple CONTENT TLVs are present, concatenate in order (defensive tolerance).
+- FILE_SIZE expects `len=4` and is parsed as UInt32; receivers may upcast to 64â€‘bit internally.
+- CONTENT expects a 4â€‘byte length field and a single occurrence; if multiple CONTENT TLVs are present, concatenate in order (defensive tolerance).
 - If FILE_SIZE is missing, receivers may fall back to `content.size`.
 - If MIME_TYPE is missing, default to `application/octet-stream`.
 
-Legacy Compatibility (optional, for mixed‑version meshes):
+Legacy Compatibility (optional, for mixedâ€‘version meshes):
 
-- FILE_SIZE (0x02): Some legacy senders used 8‑byte UInt64. Decoders MAY accept `len=8` and clamp to 32‑bit if needed.
-- CONTENT (0x04): Legacy payloads might have used a 2‑byte TLV length with multiple CONTENT chunks. Decoders MAY support concatenating multiple CONTENT TLVs with 2‑byte lengths if encountered.
+- FILE_SIZE (0x02): Some legacy senders used 8â€‘byte UInt64. Decoders MAY accept `len=8` and clamp to 32â€‘bit if needed.
+- CONTENT (0x04): Legacy payloads might have used a 2â€‘byte TLV length with multiple CONTENT chunks. Decoders MAY support concatenating multiple CONTENT TLVs with 2â€‘byte lengths if encountered.
 
 
 ---
@@ -137,10 +137,10 @@ Legacy Compatibility (optional, for mixed‑version meshes):
 
 ### 2.1 Fragmentation
 
-File transfers reuse the mesh broadcaster’s fragmentation logic:
+File transfers reuse the mesh broadcasterâ€™s fragmentation logic:
 
 - `BluetoothPacketBroadcaster` checks if the serialized envelope exceeds the configured MTU and splits it into fragments via `FragmentManager`.
-- Fragments are sent with a short inter‑fragment delay (currently ~200 ms; matches iOS/Rust behavior notes in code).
+- Fragments are sent with a short interâ€‘fragment delay (currently ~200 ms; matches iOS/Rust behavior notes in code).
 - When only one fragment is needed, send as a single packet.
 
 ### 2.2 Transfer ID and progress events
@@ -155,25 +155,25 @@ The broadcaster emits progress events to a shared flow:
 - `TransferProgressManager.progress(id, sent, totalFragments)`
 - `TransferProgressManager.complete(id, totalFragments)`
 
-The UI maps `transferId → messageId`, then updates `DeliveryStatus.PartiallyDelivered(sent, total)` as events arrive; when `complete`, switches to `Delivered`.
+The UI maps `transferId â†’ messageId`, then updates `DeliveryStatus.PartiallyDelivered(sent, total)` as events arrive; when `complete`, switches to `Delivered`.
 
 ### 2.3 Cancellation
 
-Transfers are cancellable mid‑flight:
+Transfers are cancellable midâ€‘flight:
 
-- The broadcaster keeps a `transferId → Job` map and cancels the job to stop sending remaining fragments.
+- The broadcaster keeps a `transferId â†’ Job` map and cancels the job to stop sending remaining fragments.
 - API path:
   - `BluetoothPacketBroadcaster.cancelTransfer(transferId)`
   - Exposed via `BluetoothConnectionManager.cancelTransfer` and `BluetoothMeshService.cancelFileTransfer`.
-  - `ChatViewModel.cancelMediaSend(messageId)` resolves `messageId → transferId` and cancels.
-- UX: tapping the “X” on a sending media removes the message from the timeline immediately.
+  - `ChatViewModel.cancelMediaSend(messageId)` resolves `messageId â†’ transferId` and cancels.
+- UX: tapping the â€œXâ€ on a sending media removes the message from the timeline immediately.
 
 Implementation files:
 
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothPacketBroadcaster.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothPacketBroadcaster.kt)
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothConnectionManager.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothConnectionManager.kt)
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt)
-- `app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothPacketBroadcaster.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothPacketBroadcaster.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothConnectionManager.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothConnectionManager.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt)
+- `app/src/main/java/com/lemn/app/ui/ChatViewModel.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/ChatViewModel.kt)
 
 
 ---
@@ -183,7 +183,7 @@ Implementation files:
 Receiver dispatch is in `MessageHandler`:
 
 - For both broadcast and private paths we try `BitchatFilePacket.decode(payload)`. If it decodes:
-  - The file is persisted under app files with type‑specific subfolders:
+  - The file is persisted under app files with typeâ€‘specific subfolders:
     - Audio: `files/voicenotes/incoming/`
     - Image: `files/images/incoming/`
     - Other files: `files/files/incoming/`
@@ -200,7 +200,7 @@ Receiver dispatch is in `MessageHandler`:
 
 Files:
 
-- `app/src/main/java/com/bitchat/android/mesh/MessageHandler.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/MessageHandler.kt)
+- `app/src/main/java/com/lemn/app/mesh/MessageHandler.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/MessageHandler.kt)
 
 
 ---
@@ -210,7 +210,7 @@ Files:
 ### 4.1 Audio (Voice Notes)
 
 1) Capture
-   - Hold‑to‑record mic button starts `MediaRecorder` with AAC in MP4 (`audio/mp4`).
+   - Holdâ€‘toâ€‘record mic button starts `MediaRecorder` with AAC in MP4 (`audio/mp4`).
    - Sample rate: 44100 Hz, channels: mono, bitrate: ~32 kbps (to reduce payload size for BLE).
    - On release, we pad 500 ms before stopping to avoid clipping endings.
    - Files saved under `files/voicenotes/outgoing/voice_YYYYMMDD_HHMMSS.m4a`.
@@ -221,12 +221,12 @@ Files:
 
 3) Packet creation
    - Build a `BitchatFilePacket`:
-     - `fileName`: basename (e.g., `voice_… .m4a`)
+     - `fileName`: basename (e.g., `voice_â€¦ .m4a`)
      - `fileSize`: file length
      - `mimeType`: `audio/mp4`
-     - `content`: full bytes (ensure content ≤ 64 KiB; with chosen codec params typical short notes fit fragmentation constraints)
+     - `content`: full bytes (ensure content â‰¤ 64 KiB; with chosen codec params typical short notes fit fragmentation constraints)
    - Encode TLV; compute `transferId = sha256Hex(payload)`.
-   - Map `transferId → messageId` for UI progress.
+   - Map `transferId â†’ messageId` for UI progress.
 
 4) Send
    - Public: `BluetoothMeshService.sendFileBroadcast(filePacket)`.
@@ -234,15 +234,15 @@ Files:
    - Broadcaster handles fragmentation and progress emission.
 
 5) Waveform
-   - We extract a 120‑bin waveform from the recorded file (the same extractor used for the receiver) and cache by file path, so sender and receiver waveforms are identical.
+   - We extract a 120â€‘bin waveform from the recorded file (the same extractor used for the receiver) and cache by file path, so sender and receiver waveforms are identical.
 
 Core files:
 
-- `app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt` (sendVoiceNote) (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt)
-- `app/src/main/java/com/bitchat/android/model/BitchatFilePacket.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/model/BitchatFilePacket.kt)
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt)
-- `app/src/main/java/com/bitchat/android/features/voice/VoiceRecorder.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/voice/VoiceRecorder.kt)
-- `app/src/main/java/com/bitchat/android/features/voice/Waveform.kt` (cache + extractor) (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/voice/Waveform.kt)
+- `app/src/main/java/com/lemn/app/ui/ChatViewModel.kt` (sendVoiceNote) (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/ChatViewModel.kt)
+- `app/src/main/java/com/lemn/app/model/BitchatFilePacket.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/model/BitchatFilePacket.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt)
+- `app/src/main/java/com/lemn/app/features/voice/VoiceRecorder.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/voice/VoiceRecorder.kt)
+- `app/src/main/java/com/lemn/app/features/voice/Waveform.kt` (cache + extractor) (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/voice/Waveform.kt)
 
 ### 4.2 Images
 
@@ -263,9 +263,9 @@ Core files:
 
 Core files:
 
-- `app/src/main/java/com/bitchat/android/features/media/ImageUtils.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/media/ImageUtils.kt)
-- `app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt` (sendImageNote) (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt)
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt)
+- `app/src/main/java/com/lemn/app/features/media/ImageUtils.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/media/ImageUtils.kt)
+- `app/src/main/java/com/lemn/app/ui/ChatViewModel.kt` (sendImageNote) (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/ChatViewModel.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt)
 
 
 ---
@@ -276,19 +276,19 @@ This section specifies exactly what users see and how inputs behave, so alternat
 
 ### 5.1 Message input area
 
-- The input field remains mounted at all times to prevent the IME (keyboard) from collapsing during long‑press interactions (recording). We overlay recording UI atop the text field rather than replacing it.
+- The input field remains mounted at all times to prevent the IME (keyboard) from collapsing during longâ€‘press interactions (recording). We overlay recording UI atop the text field rather than replacing it.
 - While recording, the text caret (cursor) is hidden by setting a transparent cursor brush.
 - Mentions and slash commands are styled with a monospace look and color coding.
 
 Files:
 
-- `app/src/main/java/com/bitchat/android/ui/InputComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/InputComponents.kt)
+- `app/src/main/java/com/lemn/app/ui/InputComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/InputComponents.kt)
 
 ### 5.2 Recording UX
 
 - Hold the mic button to start recording. Recording runs until release, then we pad 500 ms and stop.
-- While recording, a dense, real‑time scrolling waveform overlays the input showing live audio; a timer is shown to the right.
-  - Component: `RealtimeScrollingWaveform` (dense bars, ~240 columns, ~20 FPS) in `app/src/main/java/com/bitchat/android/ui/media/RealtimeScrollingWaveform.kt`.
+- While recording, a dense, realâ€‘time scrolling waveform overlays the input showing live audio; a timer is shown to the right.
+  - Component: `RealtimeScrollingWaveform` (dense bars, ~240 columns, ~20 FPS) in `app/src/main/java/com/lemn/app/ui/media/RealtimeScrollingWaveform.kt`.
   - The keyboard stays visible; the caret is hidden.
 - On release, we immediately show a local echo message for the voice note and start sending.
 
@@ -296,44 +296,44 @@ Files:
 
 - Displayed with a header (nickname + timestamp) then the waveform + controls row.
 - Waveform
-  - A 120‑bin static waveform is rendered per file, identical for sender and receiver, extracted from the actual audio file.
-  - During send, the waveform fills left→right in blue based on fragment progress.
-  - During playback, the waveform fills left→right in green based on player progress.
+  - A 120â€‘bin static waveform is rendered per file, identical for sender and receiver, extracted from the actual audio file.
+  - During send, the waveform fills leftâ†’right in blue based on fragment progress.
+  - During playback, the waveform fills leftâ†’right in green based on player progress.
 - Controls
   - Play/Pause toggle to the left of the waveform; duration text to the right.
 - Cancel sending
-  - While sending a voice note, a round “X” cancel button appears to the right of the controls. Tapping cancels the transfer mid‑flight.
+  - While sending a voice note, a round â€œXâ€ cancel button appears to the right of the controls. Tapping cancels the transfer midâ€‘flight.
 
 Files:
 
-- `app/src/main/java/com/bitchat/android/ui/MessageComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/MessageComponents.kt)
-- `app/src/main/java/com/bitchat/android/ui/media/WaveformViews.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/WaveformViews.kt)
-- `app/src/main/java/com/bitchat/android/features/voice/Waveform.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/voice/Waveform.kt)
+- `app/src/main/java/com/lemn/app/ui/MessageComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/MessageComponents.kt)
+- `app/src/main/java/com/lemn/app/ui/media/WaveformViews.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/WaveformViews.kt)
+- `app/src/main/java/com/lemn/app/features/voice/Waveform.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/voice/Waveform.kt)
 
 ### 5.4 Image sending UX
 
-- A circular “+” button next to the mic opens the system image picker. After selection, we downscale to 512 px longest edge and show a local echo; the send begins immediately.
+- A circular â€œ+â€ button next to the mic opens the system image picker. After selection, we downscale to 512 px longest edge and show a local echo; the send begins immediately.
 - Progress visualization
-  - Instead of a linear progress bar, we reveal the image block‑by‑block (modem‑era homage).
-  - The image is divided into a constant grid (default 24×16), and the blocks are rendered in order based on fragment progress; there are no gaps between tiles.
-  - The cancel “X” button overlays the top‑right corner during sending.
+  - Instead of a linear progress bar, we reveal the image blockâ€‘byâ€‘block (modemâ€‘era homage).
+  - The image is divided into a constant grid (default 24Ã—16), and the blocks are rendered in order based on fragment progress; there are no gaps between tiles.
+  - The cancel â€œXâ€ button overlays the topâ€‘right corner during sending.
 - On cancel, the message is removed from the chat immediately.
 
 Files:
 
-- `app/src/main/java/com/bitchat/android/ui/media/ImagePickerButton.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/ImagePickerButton.kt)
-- `app/src/main/java/com/bitchat/android/features/media/ImageUtils.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/media/ImageUtils.kt)
-- `app/src/main/java/com/bitchat/android/ui/media/BlockRevealImage.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/BlockRevealImage.kt)
-- `app/src/main/java/com/bitchat/android/ui/MessageComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/MessageComponents.kt)
+- `app/src/main/java/com/lemn/app/ui/media/ImagePickerButton.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/ImagePickerButton.kt)
+- `app/src/main/java/com/lemn/app/features/media/ImageUtils.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/media/ImageUtils.kt)
+- `app/src/main/java/com/lemn/app/ui/media/BlockRevealImage.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/BlockRevealImage.kt)
+- `app/src/main/java/com/lemn/app/ui/MessageComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/MessageComponents.kt)
 
 ### 5.5 Image receiving UX
 
-- Received images render fully with rounded corners and are left‑aligned like text messages.
+- Received images render fully with rounded corners and are leftâ€‘aligned like text messages.
 - Tapping an image opens a fullscreen viewer with an option to save to the device Downloads via `MediaStore`.
 
 Files:
 
-- `app/src/main/java/com/bitchat/android/ui/media/FullScreenImageViewer.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/FullScreenImageViewer.kt)
+- `app/src/main/java/com/lemn/app/ui/media/FullScreenImageViewer.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/FullScreenImageViewer.kt)
 
 
 ---
@@ -362,19 +362,19 @@ VoiceNotePlayer Seeking:
 - Updates progress state immediately for UI responsiveness even before playback reaches the new position.
 
 Files:
-- `app/src/main/java/com/bitchat/android/ui/MessageComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/MessageComponents.kt) — VoiceNotePlayer with seekTo function
-- `app/src/main/java/com/bitchat/android/ui/media/WaveformViews.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/WaveformViews.kt) — Interactive WaveformCanvas with tap handling
+- `app/src/main/java/com/lemn/app/ui/MessageComponents.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/MessageComponents.kt) â€” VoiceNotePlayer with seekTo function
+- `app/src/main/java/com/lemn/app/ui/media/WaveformViews.kt` (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/WaveformViews.kt) â€” Interactive WaveformCanvas with tap handling
 
 ---
 
 ## 6) Edge Cases and Notes
 
-- Filename collisions on receiver: prefer the sender‑supplied name if present; always uniquify with a ` (n)` suffix before the extension to prevent overwrites.
+- Filename collisions on receiver: prefer the senderâ€‘supplied name if present; always uniquify with a ` (n)` suffix before the extension to prevent overwrites.
 - Path markers in messages
   - We use simple content markers: `"[voice] <abs path>", "[image] <abs path>", "[file] <abs path>"` for local rendering. These are not sent on the wire; the actual file bytes are inside the TLV payload.
-- Progress math for images relies on `(sent / total)` from `TransferProgressManager` (fragment‑level granularity). The block grid density can be tuned; currently 24×16.
+- Progress math for images relies on `(sent / total)` from `TransferProgressManager` (fragmentâ€‘level granularity). The block grid density can be tuned; currently 24Ã—16.
 - Private vs public: both use the same file TLV; only the envelope `recipientID` differs. Private may have signatures; code shows a signing step consistent with iOS behavior prior to broadcast to ensure integrity.
-- BLE timing: there is a 200 ms inter‑fragment delay for stability. Adjust as needed for your radio stack while maintaining compatibility.
+- BLE timing: there is a 200 ms interâ€‘fragment delay for stability. Adjust as needed for your radio stack while maintaining compatibility.
 
 
 ---
@@ -383,38 +383,38 @@ Files:
 
 Core protocol and transport:
 
-- `app/src/main/java/com/bitchat/android/model/BitchatFilePacket.kt` — TLV payload model + encode/decode. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/model/BitchatFilePacket.kt)
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt` — packet creation and broadcast for file messages. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothMeshService.kt)
-- `app/src/main/java/com/bitchat/android/mesh/BluetoothPacketBroadcaster.kt` — fragmentation, progress, cancellation via transfer jobs. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/BluetoothPacketBroadcaster.kt)
-- `app/src/main/java/com/bitchat/android/mesh/TransferProgressManager.kt` — progress events bus. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/TransferProgressManager.kt)
-- `app/src/main/java/com/bitchat/android/mesh/MessageHandler.kt` — receive path: decode, persist to files, create chat messages. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/mesh/MessageHandler.kt)
+- `app/src/main/java/com/lemn/app/model/BitchatFilePacket.kt` â€” TLV payload model + encode/decode. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/model/BitchatFilePacket.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt` â€” packet creation and broadcast for file messages. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothMeshService.kt)
+- `app/src/main/java/com/lemn/app/mesh/BluetoothPacketBroadcaster.kt` â€” fragmentation, progress, cancellation via transfer jobs. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/BluetoothPacketBroadcaster.kt)
+- `app/src/main/java/com/lemn/app/mesh/TransferProgressManager.kt` â€” progress events bus. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/TransferProgressManager.kt)
+- `app/src/main/java/com/lemn/app/mesh/MessageHandler.kt` â€” receive path: decode, persist to files, create chat messages. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/mesh/MessageHandler.kt)
 
 Audio capture and waveform:
 
-- `app/src/main/java/com/bitchat/android/features/voice/VoiceRecorder.kt` — MediaRecorder wrapper. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/voice/VoiceRecorder.kt)
-- `app/src/main/java/com/bitchat/android/features/voice/Waveform.kt` — cache + extractor + resampler. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/voice/Waveform.kt)
-- `app/src/main/java/com/bitchat/android/ui/media/WaveformViews.kt` — Compose waveform preview components. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/WaveformViews.kt)
+- `app/src/main/java/com/lemn/app/features/voice/VoiceRecorder.kt` â€” MediaRecorder wrapper. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/voice/VoiceRecorder.kt)
+- `app/src/main/java/com/lemn/app/features/voice/Waveform.kt` â€” cache + extractor + resampler. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/voice/Waveform.kt)
+- `app/src/main/java/com/lemn/app/ui/media/WaveformViews.kt` â€” Compose waveform preview components. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/WaveformViews.kt)
 
 Image pipeline:
 
-- `app/src/main/java/com/bitchat/android/features/media/ImageUtils.kt` — downscale and save to app files. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/features/media/ImageUtils.kt)
-- `app/src/main/java/com/bitchat/android/ui/media/ImagePickerButton.kt` — SAF picker button. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/ImagePickerButton.kt)
-- `app/src/main/java/com/bitchat/android/ui/media/BlockRevealImage.kt` — block‑reveal progress renderer (no gaps, dense grid). (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/BlockRevealImage.kt)
+- `app/src/main/java/com/lemn/app/features/media/ImageUtils.kt` â€” downscale and save to app files. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/features/media/ImageUtils.kt)
+- `app/src/main/java/com/lemn/app/ui/media/ImagePickerButton.kt` â€” SAF picker button. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/ImagePickerButton.kt)
+- `app/src/main/java/com/lemn/app/ui/media/BlockRevealImage.kt` â€” blockâ€‘reveal progress renderer (no gaps, dense grid). (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/BlockRevealImage.kt)
 
 Recording overlay:
 
-- `app/src/main/java/com/bitchat/android/ui/media/RealtimeScrollingWaveform.kt` — dense, real‑time scrolling waveform during recording. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/RealtimeScrollingWaveform.kt)
+- `app/src/main/java/com/lemn/app/ui/media/RealtimeScrollingWaveform.kt` â€” dense, realâ€‘time scrolling waveform during recording. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/RealtimeScrollingWaveform.kt)
 
 UI composition and view model coordination:
 
-- `app/src/main/java/com/bitchat/android/ui/InputComponents.kt` — input field, overlays (recording), picker button, mic. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/InputComponents.kt)
-- `app/src/main/java/com/bitchat/android/ui/MessageComponents.kt` — message rendering for text/audio/images including progress UIs and cancel overlays. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/MessageComponents.kt)
-- `app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt` — sendVoiceNote/sendImageNote, progress mapping, cancelMediaSend. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/ChatViewModel.kt)
-- `app/src/main/java/com/bitchat/android/ui/MessageManager.kt` — add/remove/update messages across main, private, and channels. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/MessageManager.kt)
+- `app/src/main/java/com/lemn/app/ui/InputComponents.kt` â€” input field, overlays (recording), picker button, mic. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/InputComponents.kt)
+- `app/src/main/java/com/lemn/app/ui/MessageComponents.kt` â€” message rendering for text/audio/images including progress UIs and cancel overlays. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/MessageComponents.kt)
+- `app/src/main/java/com/lemn/app/ui/ChatViewModel.kt` â€” sendVoiceNote/sendImageNote, progress mapping, cancelMediaSend. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/ChatViewModel.kt)
+- `app/src/main/java/com/lemn/app/ui/MessageManager.kt` â€” add/remove/update messages across main, private, and channels. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/MessageManager.kt)
 
 Fullscreen image:
 
-- `app/src/main/java/com/bitchat/android/ui/media/FullScreenImageViewer.kt` — fullscreen viewer + save to Downloads. (/Users/cc/git/bitchat-android/app/src/main/java/com/bitchat/android/ui/media/FullScreenImageViewer.kt)
+- `app/src/main/java/com/lemn/app/ui/media/FullScreenImageViewer.kt` â€” fullscreen viewer + save to Downloads. (/Users/cc/git/bitchat-android/app/src/main/java/com/lemn/app/ui/media/FullScreenImageViewer.kt)
 
 
 ---
@@ -430,13 +430,14 @@ Fullscreen image:
 4. Fragment, send, and report progress using a transfer ID derived from `sha256(payload)` so the UI can map progress to a message.
 5. Support cancellation at the fragment sender: stop sending remaining fragments and propagate a cancel to the UI (we remove the message).
 6. On receive, decode TLV, persist to an app directory (separate audio/images/other), and create a chat message with content marker `"[voice] path"`, `"[image] path"`, or `"[file] path"` for local rendering.
-7. Audio sender and receiver should use the same waveform extractor so visuals match; a 120‑bin histogram is a good balance.
+7. Audio sender and receiver should use the same waveform extractor so visuals match; a 120â€‘bin histogram is a good balance.
 8. **Implement interactive waveform seeking**: Tap waveforms to jump to that audio position. Calculate tap position as fraction (0.0-1.0) of waveform width.
 9. For images, optionally downscale to keep TLV small; JPEG 85% at 512 px longest edge is a good baseline.
 10. Mirror the UX:
     - Recording overlay that does not collapse the IME; hide the caret while recording; add 500 ms end padding.
     - Voice: waveform fill for send/playback; cancel overlay; **tap-to-seek support**.
-    - Images: dense block‑reveal with no gaps during sending; cancel overlay; fullscreen viewer with save.
+    - Images: dense blockâ€‘reveal with no gaps during sending; cancel overlay; fullscreen viewer with save.
     - Generic files: render as a file pill with icon + filename; support open/save via the host OS.
 
 Following the above should produce an interoperable and matching experience across platforms.
+

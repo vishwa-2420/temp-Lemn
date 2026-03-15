@@ -1,4 +1,4 @@
-# Device Monitoring Manager — Design and Integration
+# Device Monitoring Manager â€” Design and Integration
 
 This change introduces a lean DeviceMonitoringManager to strictly manage BLE device connections while keeping the existing code structure intact.
 
@@ -12,7 +12,7 @@ This change introduces a lean DeviceMonitoringManager to strictly manage BLE dev
 
 ## Implementation Overview
 
-File: `app/src/main/java/com/bitchat/android/mesh/DeviceMonitoringManager.kt`
+File: `app/src/main/java/com/lemn/app/mesh/DeviceMonitoringManager.kt`
 
 - Thread-safe maps with coroutine-based timers.
 - Minimal surface area: a few clearly named entry points to hook into existing flows.
@@ -21,7 +21,7 @@ File: `app/src/main/java/com/bitchat/android/mesh/DeviceMonitoringManager.kt`
 Key logic:
 - `isBlocked(address)`: check if a MAC is blocked (auto-clears on expiry).
 - `block(address, reason)`: add MAC to blocklist (15m), disconnect via callback, auto-unblock later.
-- `onConnectionEstablished(address)`: start 15s “first ANNOUNCE” timer and a 60s inactivity timer.
+- `onConnectionEstablished(address)`: start 15s â€œfirst ANNOUNCEâ€ timer and a 60s inactivity timer.
 - `onAnnounceReceived(address)`: cancel the 15s ANNOUNCE timer for that device.
 - `onAnyPacketReceived(address)`: refresh 60s inactivity timer.
 - `onDeviceDisconnected(address, status)`: track error disconnects and block on 5 within 5 minutes.
@@ -57,7 +57,7 @@ Timers:
 - On disconnect, call `deviceMonitor.onDeviceDisconnected(addr, status)`.
 
 4) ANNOUNCE Binding
-- File: `BluetoothMeshService.kt` (in the ANNOUNCE handler where we first map device → peer)
+- File: `BluetoothMeshService.kt` (in the ANNOUNCE handler where we first map device â†’ peer)
 
 ## Behavior Summary
 
@@ -93,13 +93,13 @@ Timers:
 
 - Triple-tapping the title now also clears the device blocklist and all device tracking:
   - Calls `BluetoothMeshService.clearAllInternalData()` which triggers `BluetoothConnectionManager.clearDeviceMonitoringAndTracking()`.
-  - This disconnects active connections, clears the monitor’s blocklist and timers, and resets the `BluetoothConnectionTracker` state.
+  - This disconnects active connections, clears the monitorâ€™s blocklist and timers, and resets the `BluetoothConnectionTracker` state.
 
 ## Notes and Rationale
 
 - The monitoring manager is intentionally decoupled from GATT specifics via a disconnect callback. This keeps responsibilities separate and avoids plumbing GATT instances through unrelated classes.
 - Packet activity is captured in both client and server data paths as early as possible to ensure the inactivity timer is accurate even before higher-level processing.
-- The “first ANNOUNCE” check uses the same mapping event that sets `addressPeerMap` to avoid false positives on unverified announces.
+- The â€œfirst ANNOUNCEâ€ check uses the same mapping event that sets `addressPeerMap` to avoid false positives on unverified announces.
 
 ## Touched Files
 
@@ -110,3 +110,4 @@ Timers:
 - Updated: `mesh/BluetoothMeshService.kt`
 
 These changes are small, local, and respect existing structure without broad refactors.
+

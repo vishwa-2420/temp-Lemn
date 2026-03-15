@@ -16,7 +16,7 @@ This document provides context, architectural insights, and development standard
 ## 2. Architecture & Directory Structure
 The application follows a clean architecture pattern, heavily modularized by feature within the `app` module.
 
-**Root Package:** `com.bitchat.android`
+**Root Package:** `com.lemn.app`
 
 | Directory | Purpose |
 |-----------|---------|
@@ -72,3 +72,4 @@ The application follows a clean architecture pattern, heavily modularized by fea
 
 ---
 *Note: This file is intended to assist AI agents in navigating and modifying the codebase efficiently. Always verify context by reading the actual files before making changes.*
+
